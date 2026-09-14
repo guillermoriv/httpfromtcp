@@ -65,6 +65,11 @@ func (h Headers) Get(key string) string {
 	return h[strings.ToLower(key)]
 }
 
+func (h Headers) Override(key, value string) {
+	key = strings.ToLower(key)
+	h[key] = value
+}
+
 func isValidHeaderName(key string) bool {
 	if len(key) == 0 {
 		return false

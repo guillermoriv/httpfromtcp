@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"sync/atomic"
@@ -12,24 +10,13 @@ import (
 	"github.com/guillermoriv/httpfromtcp/internal/response"
 )
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
+// Server is an HTTP 1.1 server
 type Server struct {
 	closed   atomic.Bool
 	listener net.Listener
 	handler  Handler
-}
-
-type HandlerError struct {
-	StatusCode response.StatusCode
-	Message    string
-}
-
-func (he HandlerError) Write(w io.Writer) {
-	response.WriteStatusLine(w, he.StatusCode)
-	headers := response.GetDefaultHeaders(len(he.Message))
-	response.WriteHeaders(w, headers)
-	w.Write([]byte(he.Message)) // writting the body back for the message
 }
 
 func Serve(port int, handler Handler) (*Server, error) {
@@ -69,27 +56,14 @@ func (s *Server) listen() {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
+	w := response.NewWriter(conn)
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		hErr := &HandlerError{
-			StatusCode: response.StatusBadRequest,
-			Message:    err.Error(),
-		}
-		hErr.Write(conn)
+		w.WriteStatusLine(response.StatusBadRequest)
+		body := fmt.Appendf(nil, "Error parsing request: %v", err)
+		w.WriteHeaders(response.GetDefaultHeaders(len(body)))
+		w.WriteBody(body)
 		return
 	}
-
-	buf := bytes.NewBuffer([]byte{})
-
-	hErr := s.handler(buf, req)
-	if hErr != nil {
-		hErr.Write(conn)
-		return
-	}
-
-	b := buf.Bytes()
-	response.WriteStatusLine(conn, response.StatusOK)
-	headers := response.GetDefaultHeaders(len(b))
-	response.WriteHeaders(conn, headers)
-	conn.Write(b)
+	s.handler(w, req)
 }
